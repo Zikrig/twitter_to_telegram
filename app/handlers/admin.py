@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 
 from services.Twitter import Twitter
 from .utils_postwork import send_twitter_post, get_new_posts
+from .utils_translation import translate_post
 from ..database import SessionLocal
 from ..utils import *
 from config import config
@@ -147,7 +148,7 @@ async def update_and_send_posts(message: types.Message, bot: Bot):
         # Создаем клиент Twitter
         twitter_client = Twitter(config.TWITTER_API_HOST, config.TWITTER_API_KEY)
         
-        rate_limit_reports = []
+        rate_limit_reports = ''
         total_new_posts = 0
         
         for channel in channels:
@@ -173,7 +174,7 @@ async def update_and_send_posts(message: types.Message, bot: Bot):
                 continue
                 
             new_posts, rate_limit_info = result
-            rate_limit_reports.append(f"• {channel.name}: {rate_limit_info}")
+            rate_limit_reports = rate_limit_info
             
             if not new_posts:
                 continue
@@ -191,6 +192,7 @@ async def update_and_send_posts(message: types.Message, bot: Bot):
             
             # Отправляем посты каждому получателю
             for post in new_posts:
+                post = await translate_post(post)
                 for recipient_id in recipients:
                     await send_twitter_post(bot, recipient_id, post)
             
@@ -207,59 +209,7 @@ async def update_and_send_posts(message: types.Message, bot: Bot):
             f"📊 Обновление завершено!\n"
             f"• Всего каналов: {len(channels)}\n"
             f"• Новых постов: {total_new_posts}\n\n"
-            f"Статус API лимитов:\n" + rate_limit_reports[-1]
+            f"Статус API лимитов:\n" + rate_limit_reports
         )
         
         await bot.send_message(message.from_user.id, report)
-        
-        
-# @router.message(F.text == "🗑️ Удалить канал из системы")
-# async def admin_delete_channel_list(message: types.Message):
-#     """Показывает список всех каналов для полного удаления"""
-#     if not config.is_admin(message.from_user.id):
-#         return
-        
-#     with SessionLocal() as db:
-#         channels = get_all_channels(db)
-    
-#     if not channels:
-#         await message.answer("❌ Каналы не найдены")
-#         return
-    
-#     builder = InlineKeyboardBuilder()
-#     for channel in channels:
-#         builder.add(
-#             types.InlineKeyboardButton(
-#                 text=f"🗑️ Удалить @{channel.name}",
-#                 callback_data=f"admin_full_delete:{channel.id}"
-#             )
-#         )
-#     builder.adjust(1)
-    
-#     await message.answer(
-#         "Выберите канал для полного удаления из системы:",
-#         reply_markup=builder.as_markup()
-#     )
-
-
-# @router.callback_query(F.data.startswith("admin_full_delete:"))
-# async def admin_full_delete_callback(callback: types.CallbackQuery):
-#     """Полное удаление канала из системы"""
-#     channel_id = int(callback.data.split(":")[1])
-    
-#     with SessionLocal() as db:
-#         channel = get_channel_by_id(db, channel_id)
-#         if not channel:
-#             await callback.message.edit_text("❌ Канал не найден")
-#             await callback.answer()
-#             return
-            
-#         channel_name = channel.name
-#         if delete_channel(db, channel_id):
-#             await callback.message.edit_text(
-#                 f"✅ Канал @{channel_name} полностью удалён из системы"
-#             )
-#         else:
-#             await callback.message.edit_text("❌ Ошибка при удалении канала")
-    
-#     await callback.answer()

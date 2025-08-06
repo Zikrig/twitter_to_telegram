@@ -162,7 +162,7 @@ async def delete_channel_list(message: types.Message):
         # if config.is_admin(message.from_user.id):
         #     callback_data = f"admin_delete_channel:{channel.id}"
         # else:
-        callback_data = f"delete_channel:{channel.id}:{editor.id if not config.is_admin(message.from_user.id) else ''}"
+        callback_data = f"delete_channel:{channel.id}:{editor.id}"
         
         builder.add(
             types.InlineKeyboardButton(

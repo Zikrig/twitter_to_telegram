@@ -17,7 +17,7 @@ class Config:
     
     # GPT
     GPT_API_KEY = os.getenv('GPT_API_KEY')
-    GPT_MODEL = os.getenv('GPT_MODEL', 'gpt-4-turbo')
+    GPT_MODEL = os.getenv('GPT_MODEL')
     GPT_TEMPERATURE = float(os.getenv('GPT_TEMPERATURE', '0.7'))
     GPT_MAX_TOKENS = int(os.getenv('GPT_MAX_TOKENS', '1500'))
     

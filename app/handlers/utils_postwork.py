@@ -44,19 +44,19 @@ async def send_twitter_post(bot: Bot, chat_id: int, post: dict):
     
     # Если есть хотя бы одно видео - отправляем первое видео с текстом
     if videos:
-        # Для первого видео добавляем текст
-        video_url = videos[0]['url']
-        
-        # Отправляем видео с текстом
-        await bot.send_video(
-            chat_id=chat_id,
-            video=video_url,
-            caption=formatted_text[:1024] if formatted_text else None
-        )
-        
-        # Отправляем остальные видео
-        for video in videos[1:]:
-            await bot.send_video(chat_id, video=video['url'])
+            try:
+                video_url = videos[0]['url']
+                await bot.send_video(
+                    chat_id=chat_id,
+                    video=video_url,
+                    caption=formatted_text[:1024] if formatted_text else None
+                )
+            except Exception as e:
+                # Fallback: отправляем как ссылку
+                await bot.send_message(
+                    chat_id,
+                    f"🎥 Видео: {video_url}\n\n{formatted_text}" if formatted_text else f"🎥 Видео: {video_url}"
+                )
     
     # Отправляем фото (если есть)
     if photos:

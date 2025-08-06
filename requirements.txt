@@ -6,3 +6,4 @@ aiogram
 sqlalchemy
 psycopg2-binary
 alembic
+openai
