@@ -26,12 +26,16 @@ class Twitter:
                 params=params,
                 timeout=10  # Таймаут для защиты от зависаний
             )
+            
+            # print(response.json())
+            # print(params)
+
             response.raise_for_status()  # Проверка HTTP ошибок
 
             # print(response.json())
             # print(params)
 
-            return response.json(), response.headers
+            return {'response': response.json(), 'headers': response.headers}
         
         except requests.exceptions.HTTPError as errh:
             # Обработка HTTP ошибок (4xx, 5xx)
@@ -60,26 +64,27 @@ class Twitter:
 # Получить JSON из апи по твитам
     def get_user_tweets(self, user: str, count: str, min_created_at_datetime=None, exclude_retweets=True) -> dict:
         """Получение твитов пользователя по ID"""
-        data, headers = self._make_request(
+        data = self._make_request(
             endpoint="user-tweets",
             params={"user": user, "count": count}
         )
-    
+        
         
         if 'error' in data:
             return {
                 "error": 'true',
-                "data": data,
-                "rate_limit_limit": headers.get("x-ratelimit-requests-limit"),
-                "rate_limit_remaining": headers.get("x-ratelimit-requests-remaining")
+                "data": data['error'] + '  ' +data['message'],
+                # "rate_limit_limit": data['headers'].get("x-ratelimit-requests-limit"),
+                # "rate_limit_remaining": headers.get("x-ratelimit-requests-remaining")
             }
         
         else:
+            
             return {
                 "error": 'false',
-                "data": self.__extract_posts_from_twitter_json(data, min_created_at_datetime, exclude_retweets),
-                "rate_limit_limit": headers.get("x-ratelimit-requests-limit"),
-                "rate_limit_remaining": headers.get("x-ratelimit-requests-remaining")
+                "data": self.__extract_posts_from_twitter_json(data['response'], min_created_at_datetime, exclude_retweets),
+                "rate_limit_limit": data['headers'].get("x-ratelimit-requests-limit"),
+                "rate_limit_remaining": data['headers'].get("x-ratelimit-requests-remaining")
             }
 
 # Получить JSON из апи по юзернейму
@@ -88,25 +93,26 @@ class Twitter:
             username = username[1:]
 
         """Получение данных пользователя по имени"""
-        data, headers = self._make_request(
+        data = self._make_request(
             endpoint="user",
             params={"username": username}
         )
 
+        # print(data)
+        # print(headers)
         if 'error' in data:
             return {
                 "error": 'true',
-                "data": data,
-                "rate_limit_limit": headers.get("x-ratelimit-requests-limit"),
-                "rate_limit_remaining": headers.get("x-ratelimit-requests-remaining")
+                "data": data['error'] + '  ' +data['message'],
+                # "rate_limit_limit": headers.get("x-ratelimit-requests-limit"),
+                # "rate_limit_remaining": headers.get("x-ratelimit-requests-remaining")
             }
-        
-        else:
+        else:   
             return {
                 "error": 'false',
-                "data": self.__get_user_rest_id(data),
-                "rate_limit_limit": headers.get("x-ratelimit-requests-limit"),
-                "rate_limit_remaining": headers.get("x-ratelimit-requests-remaining")
+                "data": self.__get_user_rest_id(data['response']),                
+                "rate_limit_limit": data['headers'].get("x-ratelimit-requests-limit"),
+                "rate_limit_remaining": data['headers'].get("x-ratelimit-requests-remaining")
             }
 
     def extract(self, data: Dict[str, Any]) -> List[Dict[str, Any]]:

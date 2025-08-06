@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, timedelta
 
-from Twitter import Twitter
+from services.Twitter import Twitter
 
 
 API_HOST = 'twitter241.p.rapidapi.com'
@@ -17,7 +17,8 @@ twitter = Twitter(API_HOST, API_KEY)
 id = twitter.get_user_by_username('popcrave')
 print(id)
 
-print(twitter.get_user_tweets(int(id['data']), '5', datetime.now()-timedelta(hours=6)))
+if id['error'] == 'false':
+    print(twitter.get_user_tweets(int(id['data']), '5', datetime.now()-timedelta(hours=6)))
 
 
 # with open('twitter_response.json', 'r', encoding='utf-8') as f:

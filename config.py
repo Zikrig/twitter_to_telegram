@@ -28,6 +28,9 @@ class Config:
     DB_PASSWORD = os.getenv('DB_PASSWORD')
     DB_NAME = os.getenv('DB_NAME', 'mydatabase')
     
+    _admins = os.getenv("ADMIN_IDS", "")
+    ADMINS = [int(admin_id.strip()) for admin_id in _admins.split(",") if admin_id.strip()] if _admins else []
+    
     # App settings
     DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 't')
     LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')

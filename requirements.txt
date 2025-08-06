@@ -1,0 +1,8 @@
+requests
+python-dotenv
+pydantic
+pydantic-settings
+aiogram
+sqlalchemy
+psycopg2-binary
+alembic
