@@ -208,15 +208,13 @@ class Twitter:
         return dt.strftime('%Y-%m-%d-%H-%M-%S')
     
     def __process_tweet(self, tweet: Dict[str, Any], posts_list: List[Dict[str, Any]]) -> None:
-        """Обрабатывает твит и добавляет его в список постов, только если это не цитата"""
+        """Обрабатывает твит и добавляет его в список постов"""
         if tweet.get('__typename') != 'Tweet':
             return
         
         legacy = tweet.get('legacy', {})
-        
         text = legacy.get('full_text', '')
         
-
         # Основные данные твита
         tweet_data = {
             'id': tweet.get('rest_id', ''),
@@ -235,16 +233,32 @@ class Twitter:
                 media_type = media_item.get('type', '')
                 media_url = ''
                 
-                if media_type == 'photo':
+                # Для видео и GIF обрабатываем отдельно
+                if media_type in ['video', 'animated_gif']:
+                    # Вариант 1: Прямая ссылка на видео в поле 'media_url_https'
                     media_url = media_item.get('media_url_https', '')
-                elif media_type in ['video', 'animated_gif']:
-                    # Для видео берем превью или первую вариацию
-                    media_url = media_item.get('media_url_https', '')
+                    
+                    # Вариант 2: Ссылка на видео в вариантах
                     variants = media_item.get('video_info', {}).get('variants', [])
                     if variants:
                         # Ищем вариант с самым высоким битрейтом
                         variants.sort(key=lambda x: x.get('bitrate', 0), reverse=True)
-                        media_url = variants[0]['url']
+                        best_variant = variants[0]
+                        
+                        # Проверяем, является ли ссылка полной
+                        url = best_variant.get('url', '')
+                        if url.startswith('https://'):
+                            media_url = url
+                    
+                    # Вариант 3: Ссылка на amplify_video (специфичный формат Twitter)
+                    if not media_url:
+                        media_key = media_item.get('media_key', '')
+                        if media_key:
+                            media_url = f"https://video.twimg.com/amplify_video/{media_key}/vid/avc1/1080x1920/video.mp4"
+                
+                # Для фото просто берем ссылку
+                elif media_type == 'photo':
+                    media_url = media_item.get('media_url_https', '')
                 
                 if media_url:
                     tweet_data['media'].append({
@@ -254,7 +268,7 @@ class Twitter:
         
         # Добавляем твит в результаты
         posts_list.append(tweet_data)
-    
+        
     
 # Распарсить JSON с user_id
     def __get_user_rest_id(self, data: Dict[str, Any]) -> str:

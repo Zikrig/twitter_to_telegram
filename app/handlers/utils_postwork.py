@@ -126,7 +126,7 @@ async def get_new_posts(
                 )
             return []
         
-        return response['data'], f"Осталось {response['rate_limit_remaining']}/{response['rate_limit_limit']} обращений к API до конца месяца."
+        return response['data'], f"{response['rate_limit_remaining']}/{response['rate_limit_limit']}"
     
     except Exception as e:
         # Обрабатываем исключения при работе с API

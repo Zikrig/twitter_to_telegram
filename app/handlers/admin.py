@@ -6,6 +6,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from sqlalchemy.orm import Session, joinedload
 from datetime import datetime, timedelta
+import logging
 
 
 from services.Twitter import Twitter
@@ -15,6 +16,9 @@ from ..database import SessionLocal
 from ..utils import *
 from config import config
 from .utils import *
+
+
+logger = logging.getLogger(__name__)
 
 class AdminStates(StatesGroup):
     waiting_for_editor_data = State()
@@ -136,80 +140,83 @@ async def update_and_send_posts(message: types.Message, bot: Bot):
     """Обновляет и отправляет новые посты всем подписчикам"""
     if not config.is_admin(message.from_user.id):
         return
-        
+
     with SessionLocal() as db:
-        # Получаем все каналы с подгруженными редакторами
         channels = db.query(models.Channel).options(joinedload(models.Channel.editors)).all()
-        
+
         if not channels:
             await message.answer("❌ В системе нет каналов для обновления")
             return
-        
-        # Создаем клиент Twitter
+
         twitter_client = Twitter(config.TWITTER_API_HOST, config.TWITTER_API_KEY)
-        
-        rate_limit_reports = ''
+        rate_limit_reports = []
         total_new_posts = 0
-        
+
         for channel in channels:
-            # Преобразуем last_post_time в datetime
             last_checked = None
             if channel.last_post_time:
                 try:
                     last_checked = datetime.strptime(channel.last_post_time, "%Y-%m-%d-%H-%M-%S")
                 except ValueError:
                     last_checked = None
-            
-            # Получаем новые посты
-            result = await get_new_posts(
-                twitter_client=twitter_client,
-                channel_twitter_id=channel.twitter_id,
-                last_checked_time=last_checked,
-                bot=bot,
-                admin_ids=config.ADMINS
-            )
-            
-            # Проверяем результат
+
+            try:
+                result = await get_new_posts(
+                    twitter_client=twitter_client,
+                    channel_twitter_id=channel.twitter_id,
+                    last_checked_time=last_checked,
+                    bot=bot,
+                    admin_ids=config.ADMINS
+                )
+            except Exception as e:
+                await bot.send_message(message.from_user.id, f"⚠️ Ошибка при получении постов для {channel.name}: {e}")
+                continue
+
             if not result:
                 continue
-                
+
             new_posts, rate_limit_info = result
-            rate_limit_reports = rate_limit_info
-            
+            rate_limit_reports.append(rate_limit_info)
+
             if not new_posts:
                 continue
-                
-            # Формируем список получателей
-            recipients = set()
-            
-            # Добавляем редакторов канала
-            for editor in channel.editors:
-                recipients.add(int(editor.telegram_id))
-            
-            # Добавляем всех админов
-            for admin_id in config.ADMINS:
-                recipients.add(admin_id)
-            
-            # Отправляем посты каждому получателю
+
+            recipients = set(editor.telegram_id for editor in channel.editors)
+            recipients.update(config.ADMINS)
+
             for post in new_posts:
-                post = await translate_post(post)
+                try:
+                    post = await translate_post(post)
+                except Exception as e:
+                    await bot.send_message(
+                        message.from_user.id,
+                        f"⚠️ Ошибка при переводе поста: {e}\nПост будет отправлен без перевода."
+                    )
+                    # Продолжим с оригинальным постом
+
                 for recipient_id in recipients:
-                    await send_twitter_post(bot, recipient_id, post)
-            
-            # Обновляем время последнего поста
+                    try:
+                        await send_twitter_post(bot, recipient_id, post)
+                    except Exception as e:
+                        await bot.send_message(
+                            message.from_user.id,
+                            f"⚠️ Ошибка при отправке поста {recipient_id}: {e}"
+                        )
+
             last_post_time = max(post['created_at'] for post in new_posts)
             channel.last_post_time = last_post_time
             total_new_posts += len(new_posts)
-        
-        # Коммитим изменения в БД
+
         db.commit()
+        # logger.info(rate_limit_reports)
+        api_limit_ost = min(rate_limit_reports, key=lambda x: int(x.split('/')[0]))
         
-        # Формируем отчет для админа
         report = (
             f"📊 Обновление завершено!\n"
             f"• Всего каналов: {len(channels)}\n"
             f"• Новых постов: {total_new_posts}\n\n"
-            f"Статус API лимитов:\n" + rate_limit_reports
+            f"Статус API лимитов:\n" + api_limit_ost
         )
-        
+
         await bot.send_message(message.from_user.id, report)
+
