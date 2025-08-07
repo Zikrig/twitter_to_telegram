@@ -133,3 +133,20 @@ def delete_channel(db: Session, channel_id: int) -> bool:
         db.rollback()
         print(f"Error deleting channel: {e}")
         return False
+    
+    
+def get_schedule_settings(db: Session) -> models.ScheduleSettings:
+    settings = db.query(models.ScheduleSettings).first()
+    if not settings:
+        settings = models.ScheduleSettings(hours="9,12,15,18,21")
+        db.add(settings)
+        db.commit()
+        db.refresh(settings)
+    return settings
+
+def update_schedule_settings(db: Session, hours: str) -> models.ScheduleSettings:
+    settings = get_schedule_settings(db)
+    settings.hours = hours
+    db.commit()
+    db.refresh(settings)
+    return settings

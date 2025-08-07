@@ -1,6 +1,6 @@
 # models.py
 
-from sqlalchemy import Column, Integer, String, Table, ForeignKey
+from sqlalchemy import Column, Integer, String, Table, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from .database import Base  # Импортируем Base из database
 
@@ -38,3 +38,10 @@ class Channel(Base):
         secondary=editor_channel_association,
         back_populates="channels"
     )
+    
+class ScheduleSettings(Base):
+    __tablename__ = 'schedule_settings'
+    
+    id = Column(Integer, primary_key=True, index=True)
+    hours = Column(String, default="9,17")
+    last_run = Column(DateTime)

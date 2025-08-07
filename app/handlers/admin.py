@@ -59,10 +59,11 @@ async def add_editor_handler(message: types.Message, state: FSMContext):
         
     await state.set_state(AdminStates.waiting_for_editor_data)
     await message.answer(
-        "Введите Telegram ID и имя нового редактора через пробел:\n"
+        "Введите Telegram ID (узнать его можно здесь @GetAnyTelegramIdBot) и имя нового редактора через пробел:\n"
         "Например: <code>123456789 Иван</code>\n\n"
         "Можно отменить действие кнопкой ниже:",
-        reply_markup=build_cancel_keyboard()
+        reply_markup=build_cancel_keyboard(),
+        parse_mode="HTML"
     )
 
 @router.callback_query(F.data == "cancel_action", AdminStates.waiting_for_editor_data)
@@ -134,18 +135,24 @@ async def delete_editor_callback(callback: types.CallbackQuery):
     
     await callback.answer()
 
-
 @router.message(Command("update"))
-async def update_and_send_posts(message: types.Message, bot: Bot):
-    """Обновляет и отправляет новые посты всем подписчикам"""
+async def manual_update(message: types.Message, bot: Bot):
+    """Ручной запуск обновления"""
     if not config.is_admin(message.from_user.id):
         return
+        
+    await update_and_send_posts(bot)
+    
+    
+async def update_and_send_posts(bot: Bot):
+    """Обновляет и отправляет новые посты всем подписчикам"""
 
     with SessionLocal() as db:
         channels = db.query(models.Channel).options(joinedload(models.Channel.editors)).all()
 
         if not channels:
-            await message.answer("❌ В системе нет каналов для обновления")
+            for ADMIN_ID in config.ADMINS:
+                await bot.send_message(ADMIN_ID, "❌ В системе нет каналов для обновления")
             return
 
         twitter_client = Twitter(config.TWITTER_API_HOST, config.TWITTER_API_KEY)
@@ -169,7 +176,8 @@ async def update_and_send_posts(message: types.Message, bot: Bot):
                     admin_ids=config.ADMINS
                 )
             except Exception as e:
-                await bot.send_message(message.from_user.id, f"⚠️ Ошибка при получении постов для {channel.name}: {e}")
+                for ADMIN_ID in config.ADMINS:
+                    await bot.send_message(ADMIN_ID, f"⚠️ Ошибка при получении постов для {channel.name}: {e}")
                 continue
 
             if not result:
@@ -182,26 +190,24 @@ async def update_and_send_posts(message: types.Message, bot: Bot):
                 continue
 
             recipients = set(editor.telegram_id for editor in channel.editors)
-            recipients.update(config.ADMINS)
+            # recipients.update(config.ADMINS)
 
             for post in new_posts:
                 try:
                     post = await translate_post(post)
                 except Exception as e:
-                    await bot.send_message(
-                        message.from_user.id,
-                        f"⚠️ Ошибка при переводе поста: {e}\nПост будет отправлен без перевода."
-                    )
+                    
+                    for ADMIN_ID in config.ADMINS:
+                        await bot.send_message(ADMIN_ID, f"⚠️ Ошибка при переводе поста: {e}\nПост будет отправлен без перевода.")
+
                     # Продолжим с оригинальным постом
 
                 for recipient_id in recipients:
                     try:
                         await send_twitter_post(bot, recipient_id, post)
                     except Exception as e:
-                        await bot.send_message(
-                            message.from_user.id,
-                            f"⚠️ Ошибка при отправке поста {recipient_id}: {e}"
-                        )
+                        for ADMIN_ID in config.ADMINS:
+                            await bot.send_message(ADMIN_ID, f"⚠️ Ошибка при отправке поста {recipient_id}: {e}")
 
             last_post_time = max(post['created_at'] for post in new_posts)
             channel.last_post_time = last_post_time
@@ -217,6 +223,134 @@ async def update_and_send_posts(message: types.Message, bot: Bot):
             f"• Новых постов: {total_new_posts}\n\n"
             f"Статус API лимитов:\n" + api_limit_ost
         )
+        for ADMIN_ID in config.ADMINS:
+            await bot.send_message(ADMIN_ID, report)
 
-        await bot.send_message(message.from_user.id, report)
 
+@router.message(F.text == "⏰ Управление расписанием")
+async def manage_schedule(message: types.Message):
+    """Показывает меню управления расписанием"""
+    if not config.is_admin(message.from_user.id):
+        return
+        
+    with SessionLocal() as db:
+        settings = get_schedule_settings(db)
+        hours = settings.hours
+        
+        builder = InlineKeyboardBuilder()
+        # Кнопки для добавления/удаления часов
+        for hour in range(0, 24):
+            emoji = "✅" if str(hour) in hours.split(",") else "❌"
+            builder.add(types.InlineKeyboardButton(
+                text=f"{emoji} {hour}:00",
+                callback_data=f"schedule_toggle:{hour}"
+            ))
+        
+        builder.adjust(4)  # 4 кнопки в ряд
+        
+        # Кнопки подтверждения/отмены
+        builder.row(
+            types.InlineKeyboardButton(
+                text="✔️ Сохранить расписание",
+                callback_data="schedule_save"
+            ),
+            types.InlineKeyboardButton(
+                text="❌ Отменить",
+                callback_data="schedule_cancel"
+            )
+        )
+        
+        await message.answer(
+            "⏰ Текущее расписание обновлений:\n"
+            f"Часы: {hours}\n\n"
+            "Выберите часы для автоматического обновления:",
+            reply_markup=builder.as_markup()
+        )
+
+@router.callback_query(F.data.startswith("schedule_toggle:"))
+async def toggle_schedule_hour(callback: types.CallbackQuery):
+    """Переключает выбранный час в расписании"""
+    hour = callback.data.split(":")[1]
+    
+    with SessionLocal() as db:
+        settings = get_schedule_settings(db)
+        hours_list = settings.hours.split(",")
+        if '' in hours_list:
+            hours_list.remove('')
+        
+        if hour in hours_list:
+            hours_list.remove(hour)
+        else:
+            hours_list.append(hour)
+        
+        # logging.info(f"Текущие часы: {hours_list}")
+        # Сортируем и обновляем
+        # if len(hours_list) > 0:
+        hours_list.sort(key=int)
+        settings.hours = ",".join(hours_list)
+        db.commit()
+        # else:
+        #     settings.hours = ""
+        #     db.commit()            
+            
+        # Обновляем клавиатуру
+        await update_schedule_keyboard(callback.message, settings.hours)
+    
+    await callback.answer()
+
+async def update_schedule_keyboard(message: types.Message, hours: str):
+    """Обновляет инлайн-клавиатуру с текущим расписанием"""
+    # Фильтруем пустые значения
+    hours_list = [h.strip() for h in hours.split(",") if h.strip()]
+    
+    builder = InlineKeyboardBuilder()
+    
+    for hour in range(0, 24):
+        # Проверяем наличие часа в списке как числа
+        emoji = "✅" if str(hour) in hours_list else "❌"
+        builder.add(types.InlineKeyboardButton(
+            text=f"{emoji} {hour}:00",
+            callback_data=f"schedule_toggle:{hour}"
+        ))
+    
+    builder.adjust(4)
+    builder.row(
+        types.InlineKeyboardButton(
+            text="✔️ Сохранить расписание",
+            callback_data="schedule_save"
+        ),
+        types.InlineKeyboardButton(
+            text="❌ Отменить",
+            callback_data="schedule_cancel"
+        )
+    )
+    
+    await message.edit_text(
+        f"⏰ Текущее расписание обновлений:\nЧасы: {hours}\n\n"
+        "Выберите часы для автоматического обновления:",
+        reply_markup=builder.as_markup()
+    )
+
+@router.callback_query(F.data == "schedule_save")
+async def save_schedule(callback: types.CallbackQuery):
+    """Сохраняет расписание и закрывает меню"""
+    with SessionLocal() as db:
+        settings = get_schedule_settings(db)
+        await callback.message.edit_text(
+            f"✅ Расписание сохранено!\nЧасы обновления: {settings.hours}"
+        )
+    await callback.answer()
+
+@router.callback_query(F.data == "schedule_cancel")
+async def cancel_schedule(callback: types.CallbackQuery):
+    """Отменяет изменения и закрывает меню"""
+    with SessionLocal() as db:
+        # Восстанавливаем предыдущее расписание
+        settings = get_schedule_settings(db)
+        original_hours = settings.hours
+        db.rollback()  # Отменяем изменения
+        
+        await callback.message.edit_text(
+            f"❌ Изменения отменены\nТекущее расписание: {original_hours}"
+        )
+    await callback.answer()
