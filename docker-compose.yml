@@ -3,6 +3,7 @@ version: '3.8'
 services:
   bot:
     build: .
+    restart: unless-stopped
     container_name: telegram_bot
     env_file: .env  # Используем наш .env файл
     environment:
