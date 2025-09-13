@@ -1,31 +1,44 @@
 version: '3.8'
 
 services:
-  bot:
+  twitter_bot:
     build: .
+    container_name: twitter_bot
     restart: unless-stopped
-    container_name: telegram_bot
-    env_file: .env  # Используем наш .env файл
-    environment:
-      - DB_HOST=db  # Переопределяем хост для контейнера
-      - LOG_LEVEL=DEBUG
     depends_on:
-      - db
-    volumes:
-      - .:/app
+      postgres:
+        condition: service_healthy
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME:-twitter_bot_db}
+    networks:
+      - bot_network
 
-  db:
+  postgres:
     image: postgres:12
     container_name: postgres_db
-    env_file: .env  # Используем тот же .env файл
     environment:
-      POSTGRES_USER: ${DB_USER:-user}
+      POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_NAME:-mydatabase}
-    ports:
-      - "5432:5432"
+      POSTGRES_DB: ${DB_NAME:-twitter_bot_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5435:5432"
+    networks:
+      - bot_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-twitter_bot_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 volumes:
   postgres_data:
+
+networks:
+  bot_network:
+    driver: bridge
