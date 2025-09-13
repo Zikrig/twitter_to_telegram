@@ -10,7 +10,7 @@ services:
         condition: service_healthy
     environment:
       - DB_HOST=postgres
-      - DB_PORT=5432
+      - DB_PORT=5435
       - DB_USER=${DB_USER:-postgres}
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=${DB_NAME:-twitter_bot_db}
@@ -27,7 +27,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5435:5432"
+      - "5435:5435"
     networks:
       - bot_network
     healthcheck:
